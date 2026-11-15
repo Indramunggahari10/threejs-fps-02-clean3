@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="./favicon.ico">
+<title>Ashen Protocol — a three.js tactical FPS</title>
+<style>
+  /* Look plan: dusk canvas, warm surface, one amber accent, one teal ally colour. */
+  :root {
+    --canvas: #17130f; --surface: #241d18; --hairline: #3a2f26;
+    --ink: #efe7d8; --muted: #a89a86; --accent: #e8a13a; --teal: #4fae9d; --danger: #d95b43;
+    --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-readout: ui-monospace, 'SF Mono', Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--canvas); color: var(--ink); font-family: var(--font-ui); }
+  #game, #game canvas { position: fixed; inset: 0; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  #crosshair { position: fixed; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%, -50%); --gap: 4px; }
+  #crosshair i { position: absolute; background: var(--ink); opacity: .9; }
+  #crosshair i:nth-child(1) { left: 10px; top: calc(-1 * var(--gap)); width: 2px; height: 7px; }
+  #crosshair i:nth-child(2) { left: 10px; bottom: calc(-1 * var(--gap)); width: 2px; height: 7px; }
+  #crosshair i:nth-child(3) { top: 10px; left: calc(-1 * var(--gap)); height: 2px; width: 7px; }
+  #crosshair i:nth-child(4) { top: 10px; right: calc(-1 * var(--gap)); height: 2px; width: 7px; }
+  #hitmarker { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%, -50%) rotate(45deg); opacity: 0; transition: opacity 90ms linear; }
+  #hitmarker.on { opacity: 1; }
+  #hitmarker i { position: absolute; background: var(--accent); }
+  #hitmarker i:nth-child(1) { left: 12px; top: 0; width: 2px; height: 8px; }
+  #hitmarker i:nth-child(2) { left: 12px; bottom: 0; width: 2px; height: 8px; }
+  #hitmarker i:nth-child(3) { top: 12px; left: 0; height: 2px; width: 8px; }
+  #hitmarker i:nth-child(4) { top: 12px; right: 0; height: 2px; width: 8px; }
+  #damage { position: fixed; inset: 0; opacity: 0; transition: opacity 200ms linear; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(217, 91, 67, 0.55) 100%); }
+  #ammo { position: fixed; right: 32px; bottom: 24px; text-align: right; font-family: var(--font-readout); }
+  #ammo.empty #ammo-mag { color: var(--accent); }
+  #ammo-mag { font-size: 56px; line-height: 1; }
+  #ammo-reserve { font-size: 16px; color: var(--muted); }
+  #weapon-name { display: block; font-size: 13px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+  #health { position: fixed; left: 32px; bottom: 24px; width: 220px; font-family: var(--font-readout); }
+  #health-bar { height: 8px; background: var(--hairline); border-radius: 4px; overflow: hidden; }
+  #health-fill { height: 100%; width: 100%; background: var(--teal); transition: width 150ms linear; }
+  #health-num { font-size: 28px; }
+  #armor-num { font-size: 14px; color: var(--muted); margin-left: 8px; }
+  #top { position: fixed; top: 18px; left: 50%; transform: translateX(-50%); text-align: center; font-family: var(--font-readout); }
+  #timer { font-size: 30px; }
+  #round { font-size: 12px; color: var(--muted); letter-spacing: .12em; }
+  #scoreboard { font-size: 15px; margin-top: 2px; }
+  #score-ash { color: var(--teal); } #score-cinder { color: var(--danger); }
+  #money { position: fixed; left: 32px; top: 20px; font-family: var(--font-readout); font-size: 18px; color: var(--accent); }
+  #feed { position: fixed; right: 32px; top: 20px; text-align: right; font-size: 13px; color: var(--muted); font-family: var(--font-readout); }
+  #feed div { margin-bottom: 3px; }
+  #banner { position: fixed; top: 22%; left: 50%; transform: translateX(-50%); font-size: 34px; font-weight: 600; letter-spacing: .04em; opacity: 0; transition: opacity 300ms linear; text-shadow: 0 2px 12px rgba(0,0,0,.7); }
+  #progress { position: fixed; left: 50%; top: 62%; transform: translateX(-50%); width: 260px; text-align: center; }
+  #progress-label { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 6px; }
+  #progress-bar { height: 6px; background: var(--hairline); border-radius: 3px; overflow: hidden; }
+  #progress-fill { height: 100%; width: 0; background: var(--accent); }
+  #minimap { position: fixed; right: 32px; bottom: 110px; border: 1px solid var(--hairline); border-radius: 4px; background: rgba(23,19,15,.85); }
+  #hint { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); font-size: 12px; color: var(--muted); font-family: var(--font-readout); }
+  .overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(23,19,15,.86); }
+  .overlay[hidden] { display: none; }
+  .panel { width: min(460px, 100%); padding: 32px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 4px; }
+  .panel h1 { margin: 0 0 8px; font-size: 32px; font-weight: 500; letter-spacing: -.02em; }
+  .panel p { margin: 0 0 24px; font-size: 16px; line-height: 1.5; color: var(--muted); }
+  #play { font: inherit; font-weight: 500; padding: 12px 16px; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent); color: var(--canvas); cursor: pointer; }
+  #play:hover { background: var(--ink); border-color: var(--ink); }
+  .keys { margin: 24px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 14px; color: var(--muted); }
+  .keys li { display: flex; align-items: center; gap: 8px; }
+  .keys kbd { min-width: 24px; padding: 2px 6px; border: 1px solid var(--hairline); border-radius: 4px; font-family: var(--font-readout); font-size: 12px; color: var(--ink); text-align: center; }
+  #buy { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(23,19,15,.7); pointer-events: auto; }
+  #buy[hidden] { display: none; }
+  #buy .panel { width: min(560px, 100%); }
+  #buy h2 { margin: 0 0 4px; font-size: 22px; }
+  #buy p { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+  .buy-row { display: grid; grid-template-columns: 28px 1fr auto auto; gap: 12px; align-items: center; width: 100%; padding: 10px 12px; margin-bottom: 6px; background: var(--canvas); border: 1px solid var(--hairline); border-radius: 4px; color: var(--ink); font: inherit; cursor: pointer; text-align: left; }
+  .buy-row:hover { border-color: var(--accent); }
+  .buy-key { font-family: var(--font-readout); color: var(--muted); }
+  .buy-stat { font-size: 12px; color: var(--muted); font-family: var(--font-readout); }
+  .buy-price { font-family: var(--font-readout); color: var(--accent); }
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="hud" aria-hidden="true">
+  <div id="damage"></div>
+  <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+  <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+  <div id="top"><div id="timer">1:40</div><div id="round">ROUND 1</div>
+    <div id="scoreboard"><span id="score-ash">0</span> — <span id="score-cinder">0</span></div></div>
+  <div id="money">$800</div>
+  <div id="feed"></div>
+  <div id="banner"></div>
+  <div id="progress" hidden><div id="progress-label"></div><div id="progress-bar"><div id="progress-fill"></div></div></div>
+  <canvas id="minimap" width="168" height="168"></canvas>
+  <div id="health"><div id="health-bar"><div id="health-fill"></div></div>
+    <span id="health-num">100</span><span id="armor-num"></span></div>
+  <div id="ammo"><span id="weapon-name">KESTREL</span><span id="ammo-mag">12</span><span id="ammo-reserve">/ 48</span></div>
+  <div id="hint">WASD move · Mouse aim · Click fire · R reload · B buy · E plant / defuse · G grenade · Ctrl crouch</div>
+</div>
+<div id="buy" hidden>
+  <section class="panel"><h2>Buy menu</h2><p>Freeze time — spend the round's money. Press B or click a row. 1–8 select.</p>
+  <div id="buy-rows"></div></section>
+</div>
+<div id="overlay" class="overlay">
+  <section class="panel" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
+    <h1 id="overlay-title">ASHEN PROTOCOL</h1>
+    <p id="overlay-copy">A dusk-lit freight yard. Five against five, two charge sites, one charge to plant. Click to play — first to 5 rounds takes the match.</p>
+    <button id="play" type="button">Click to play</button>
+    <ul class="keys">
+      <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</li>
+      <li><kbd>Mouse</kbd> Look</li><li><kbd>Click</kbd> Fire</li><li><kbd>R</kbd> Reload</li>
+      <li><kbd>B</kbd> Buy menu</li><li><kbd>E</kbd> Plant / defuse</li>
+      <li><kbd>G</kbd> Grenade</li><li><kbd>Ctrl</kbd> Crouch</li><li><kbd>Space</kbd> Jump</li>
+    </ul>
+  </section>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js"
+  }
+}
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
